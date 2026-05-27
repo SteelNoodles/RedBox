@@ -4232,7 +4232,7 @@ export function Manuscripts({ pendingFile, onFileConsumed, onNavigateToRedClaw, 
                             </div>
                             {!hasVideoConfig && (
                                 <div className="text-xs text-status-error">
-                                    未检测到可用的 RedBox 官方视频配置。请先登录或配置 RedBox 官方 AI 源。
+                                    未检测到可用的视频配置。请先在设置里填写 RedBox 官方视频 Key 或通用 API Key。
                                 </div>
                             )}
 

@@ -577,10 +577,10 @@ export async function generateVideosToMediaLibrary(input: GenerateVideosInput): 
     const model = getRedBoxOfficialVideoModel(generationMode || 'text-to-video');
 
     if (!endpoint) {
-        throw new Error('生视频 Endpoint 未配置。请先登录或配置 RedBox 官方 AI 源。');
+        throw new Error('生视频 Endpoint 未配置。请先在设置中配置视频接口地址。');
     }
     if (!apiKey) {
-        throw new Error('生视频 API Key 未配置。请先登录或配置 RedBox 官方 AI 源。');
+        throw new Error('生视频 API Key 未配置。请先在设置中填写视频 Key 或通用 API Key。');
     }
     if (!isRedBoxCompatibleEndpoint(endpoint)) {
         throw new Error('生视频能力已锁定为 RedBox 官方视频源。请先使用 RedBox 官方 AI 源。');

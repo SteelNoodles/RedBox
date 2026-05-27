@@ -1274,28 +1274,15 @@ export function Settings({
   }, [aiSources, hasOfficialManagedSource, officialAiPanelEnabled]);
 
   const officialAuthStatus = String((officialAuthState as { status?: string } | null)?.status || '').trim();
-  const officialAuthKnown = officialAuthBootstrapped;
   const officialAuthPending = !officialAuthBootstrapped
     || officialAuthStatus === 'restoring'
     || officialAuthStatus === 'refreshing';
-  const officialAuthLoggedIn = officialAuthKnown
-    && officialAuthStatus !== 'anonymous'
-    && officialAuthStatus !== 'reauthRequired'
-    && officialAuthStatus !== 'restoring'
-    && Boolean((officialAuthState as { loggedIn?: boolean } | null)?.loggedIn);
-  const officialAuthNeedsLogin = officialAuthKnown && !officialAuthPending && !officialAuthLoggedIn;
+  const officialAuthLoggedIn = Boolean((officialAuthState as { loggedIn?: boolean } | null)?.loggedIn);
 
   const defaultSourceModels = useMemo(() => {
     if (!defaultAiSource) return [];
-    if (isOfficialManagedSource(defaultAiSource) && !officialAuthLoggedIn) {
-      return [];
-    }
     return filterAiModelsByCapability(getSourceModelList(defaultAiSource), 'chat');
-  }, [defaultAiSource, getSourceModelList, isOfficialManagedSource, officialAuthLoggedIn]);
-
-  const defaultOfficialSourceUnavailable = Boolean(
-    defaultAiSource && isOfficialManagedSource(defaultAiSource) && !officialAuthLoggedIn
-  );
+  }, [defaultAiSource, getSourceModelList]);
 
   const getLocalGuideForSource = useCallback((source?: AiSourceConfig | null): LocalAiGuide | null => {
     if (!source) return null;
@@ -4724,13 +4711,8 @@ export function Settings({
                         </div>
                       </div>
 
-                      <p className={clsx(
-                        'text-[11px]',
-                        defaultOfficialSourceUnavailable ? 'text-amber-600' : 'text-text-tertiary'
-                      )}>
-                        {defaultOfficialSourceUnavailable
-                          ? '当前官方源未登录，请重新登录或切换到其他默认聊天源。'
-                          : `当前生效：${defaultAiSource?.name || '未设置'} / ${defaultAiSource?.model || '未设置'}`}
+                      <p className="text-[11px] text-text-tertiary">
+                        {`当前生效：${defaultAiSource?.name || '未设置'} / ${defaultAiSource?.model || '未设置'}`}
                       </p>
                     </div>
 
@@ -4817,11 +4799,7 @@ export function Settings({
                         const isModelListExpanded = aiSourceModelExpandState[source.id] ?? false;
                         const sourceModels = getAddedSourceModelList(source);
                         const isOfficialSourcePending = isOfficialSource && officialAuthPending;
-                        const isOfficialSourceLoggedIn = isOfficialSource && officialAuthLoggedIn;
-                        const isOfficialSourceUnavailable = isOfficialSource && !officialAuthLoggedIn;
-                        const sourceModelsForDisplay = isOfficialSource
-                          ? (isOfficialSourceLoggedIn ? sourceModels : [])
-                          : sourceModels;
+                        const sourceModelsForDisplay = sourceModels;
                         const localGuide = getLocalGuideForSource(source);
                         const allowEmptyKey = isLocalAiSource(source);
 
@@ -4840,7 +4818,7 @@ export function Settings({
                                 <div className="flex items-center gap-2 min-w-0">
                                   <AiSourceLogo source={source} />
                                   <span className="text-sm font-medium text-text-primary truncate">{source.name || '未命名模型源'}</span>
-                                  {isDefaultSource && !isOfficialPlaceholder && !isOfficialSourceUnavailable && (
+                                  {isDefaultSource && !isOfficialPlaceholder && (
                                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-600">
                                       <Star className="w-2.5 h-2.5" />
                                       默认源
@@ -4851,90 +4829,52 @@ export function Settings({
                                   {isOfficialSource
                                     ? isOfficialSourcePending
                                       ? '官方托管模型源 · 正在检查登录状态'
-                                      : isOfficialSourceUnavailable
-                                      ? '官方托管模型源 · 当前未登录，登录后自动同步官方模型与凭据'
-                                      : `已托管登录态 · 默认模型：${source.model || '(未设置)'} · 已添加 ${sourceModelsForDisplay.length} 个模型`
+                                      : officialAuthLoggedIn
+                                      ? `已托管登录态 · 默认模型：${source.model || '(未设置)'} · 已添加 ${sourceModelsForDisplay.length} 个模型`
+                                      : `官方模型源 · 默认模型：${source.model || '(未设置)'} · 已添加 ${sourceModelsForDisplay.length} 个模型`
                                     : `${preset?.label || 'Custom'} · 默认模型：${source.model || '(未设置)'} · 已添加 ${sourceModels.length} 个模型`}
                                 </p>
                               </div>
-                              {isOfficialSourceUnavailable ? (
+                              <>
                                 <button
                                   type="button"
-                                  onClick={() => setAiModelSubTab('login')}
-                                  className="px-2 py-1 text-[11px] border rounded transition-colors border-border text-text-secondary hover:text-text-primary hover:bg-surface-secondary"
-                                  disabled={isOfficialSourcePending}
+                                  onClick={() => {
+                                    markAiSourceDraftDirty();
+                                    setDefaultAiSourceId(source.id);
+                                    setActiveAiSourceId(source.id);
+                                  }}
+                                  className={clsx(
+                                    'px-2 py-1 text-[11px] border rounded transition-colors',
+                                    isDefaultSource
+                                      ? 'border-amber-500/40 text-amber-600 bg-amber-500/10'
+                                      : 'border-border text-text-secondary hover:text-text-primary hover:bg-surface-secondary'
+                                  )}
                                 >
-                                  {isOfficialSourcePending ? '检查中' : '去登录'}
+                                  设为默认
                                 </button>
-                              ) : (
-                                <>
+                                {!isOfficialSource && (
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      markAiSourceDraftDirty();
-                                      setDefaultAiSourceId(source.id);
-                                      setActiveAiSourceId(source.id);
-                                    }}
-                                    className={clsx(
-                                      'px-2 py-1 text-[11px] border rounded transition-colors',
-                                      isDefaultSource
-                                        ? 'border-amber-500/40 text-amber-600 bg-amber-500/10'
-                                        : 'border-border text-text-secondary hover:text-text-primary hover:bg-surface-secondary'
-                                    )}
+                                    onClick={() => handleDeleteAiSource(source.id)}
+                                    className="p-1.5 text-text-tertiary hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                                    title="删除模型源"
                                   >
-                                    设为默认
+                                    <Trash2 className="w-3.5 h-3.5" />
                                   </button>
-                                  {!isOfficialSource && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteAiSource(source.id)}
-                                      className="p-1.5 text-text-tertiary hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                                      title="删除模型源"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
-                                </>
-                              )}
+                                )}
+                              </>
                             </div>
 
                             {isExpanded && (
                               <div className="p-3 space-y-3">
-                                {isOfficialSourceUnavailable ? (
-                                  <div className={clsx(
-                                    'rounded border px-3 py-3 text-[11px] space-y-2',
-                                    isOfficialSourcePending
-                                      ? 'border-border bg-surface-secondary/30 text-text-secondary'
-                                      : 'border-amber-500/25 bg-amber-500/5 text-text-secondary'
-                                  )}>
-                                    <div className={clsx(
-                                      'font-medium',
-                                      isOfficialSourcePending ? 'text-text-primary' : 'text-amber-600'
-                                    )}>
-                                      {isOfficialSourcePending
-                                        ? '正在检查登录状态'
-                                        : officialAuthNeedsLogin
-                                        ? '当前账号登录已失效'
-                                        : '当前账号未登录'}
+                                {isOfficialSource ? (
+                                  <div className="rounded border border-border bg-surface-secondary/30 px-3 py-2 text-[11px] text-text-secondary">
+                                    <div className="font-medium text-text-primary">
+                                      {officialAuthLoggedIn ? '已登录并启用自动同步' : '可直接使用，登录后可自动同步'}
                                     </div>
-                                    <p>
-                                      {isOfficialSourcePending
-                                        ? '正在和宿主同步官方账号状态，完成后会自动刷新这里的模型与凭据。'
-                                        : '官方源仍会固定显示在这里，但当前不会再使用旧模型和旧凭据。重新登录后会自动恢复同步。'}
+                                    <p className="mt-1">
+                                      官方登录现在只用于自动同步模型与托管凭据，不再作为使用该模型源的前置条件。
                                     </p>
-                                    {!isOfficialSourcePending && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setAiModelSubTab('login')}
-                                        className="px-3 py-1.5 border border-border rounded text-xs hover:bg-surface-secondary transition-colors"
-                                      >
-                                        前往登录
-                                      </button>
-                                    )}
-                                  </div>
-                                ) : isOfficialSource ? (
-                                  <div className="rounded border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-[11px] text-text-secondary">
-                                    <div className="font-medium text-emerald-600">已登录</div>
                                   </div>
                                 ) : (
                                   <>
