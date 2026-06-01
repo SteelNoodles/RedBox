@@ -408,6 +408,7 @@ async function handleMessage(message, sender) {
     case 'save-reddit':
     case 'save-x':
     case 'save-instagram':
+    case 'save-telegram':
       return await enqueueXhsTask({
         type: message.type,
         title: createXhsTaskTitle(message.type, message, tabId),
@@ -668,6 +669,18 @@ function detectCaptureTargetFromUrl(rawUrl) {
       action: 'save-instagram',
       label: isPostPage ? '保存 Instagram 内容到知识库' : '保存 Instagram 页面到知识库',
       description: isPostPage ? '当前页面已识别为 Instagram 内容页。' : '当前页面已识别为 Instagram 页面。',
+      detected: true,
+    };
+  }
+
+  if (hostname === 't.me' || hostname.endsWith('.t.me') || hostname === 'telegram.me' || hostname.endsWith('.telegram.me') || hostname === 'web.telegram.org' || hostname.endsWith('.telegram.org')) {
+    const isMessagePage = /\/\d+(?:\/?$|[?#])/.test(pathname) || pathname.startsWith('/k/') || pathname.startsWith('/a/') || pathname.startsWith('/z/');
+    return {
+      kind: isMessagePage ? 'telegram-message' : 'telegram-page',
+      platform: 'telegram',
+      action: 'save-telegram',
+      label: isMessagePage ? '保存 Telegram 消息到知识库' : '保存 Telegram 页面到知识库',
+      description: isMessagePage ? '当前页面已识别为 Telegram 单条消息或媒体页。' : '当前页面已识别为 Telegram 页面。',
       detected: true,
     };
   }
@@ -1189,6 +1202,17 @@ function extractSidePanelPageIdentity() {
     };
   }
 
+  if (/^(?:t\.me|telegram\.me|web\.telegram\.org)$/i.test(hostname) || /\.telegram\.org$/i.test(hostname)) {
+    return {
+      platform: 'telegram',
+      pageType: /\/\d+(?:\/?$|[?#])/.test(path) ? 'article' : 'page',
+      title: cleanTitle(meta('og:title') || text('.tgme_widget_message_author') || text('.peer-title') || baseTitle),
+      author: text('.tgme_widget_message_author') || text('.peer-title') || text('.sender-title') || '',
+      url: href,
+      hostname,
+    };
+  }
+
   if (/mp\.weixin\.qq\.com/i.test(hostname)) {
     return {
       platform: 'wechat',
@@ -1542,7 +1566,7 @@ function summarizeXhsTaskResult(result) {
   if (result?.mode === 'xhs-blogger') {
     return '博主资料已写入知识库';
   }
-  if (/^(bilibili|kuaishou|tiktok|reddit|x|instagram)-/.test(String(result?.mode || ''))) {
+  if (/^(bilibili|kuaishou|tiktok|reddit|x|instagram|telegram)-/.test(String(result?.mode || ''))) {
     return result.duplicate ? '重复内容已跳过' : '平台内容已写入知识库';
   }
   if (result?.noteId) {
@@ -1587,6 +1611,8 @@ function getXhsTaskActionLabel(type) {
       return '保存 X';
     case 'save-instagram':
       return '保存 Instagram';
+    case 'save-telegram':
+      return '保存 Telegram';
     case 'save-zhihu-answer':
       return '保存知乎回答';
     case 'save-zhihu-article':
@@ -3454,6 +3480,7 @@ function extractSocialPlatformPayload(platformHint = '') {
     if (host === 'reddit.com' || host.endsWith('.reddit.com')) return 'reddit';
     if (host === 'x.com' || host.endsWith('.x.com') || host === 'twitter.com' || host.endsWith('.twitter.com')) return 'x';
     if (host === 'instagram.com' || host.endsWith('.instagram.com')) return 'instagram';
+    if (host === 't.me' || host.endsWith('.t.me') || host === 'telegram.me' || host.endsWith('.telegram.me') || host === 'web.telegram.org' || host.endsWith('.telegram.org')) return 'telegram';
     return host.split('.').slice(-2, -1)[0] || 'web';
   }
 
@@ -3614,6 +3641,126 @@ function extractSocialPlatformPayload(platformHint = '') {
     return payload;
   }
 
+  function extractTelegram() {
+    function backgroundImageUrl(node) {
+      if (!node) return '';
+      const inline = clean(node.getAttribute?.('style') || '');
+      const computed = clean(window.getComputedStyle(node).backgroundImage || '');
+      const raw = inline || computed;
+      const match = raw.match(/url\((['"]?)(.*?)\1\)/i);
+      return absoluteUrl(match?.[2] || '');
+    }
+
+    function firstText(selectors, root = document) {
+      for (const selector of selectors) {
+        const value = cleanMultiline(text(selector, root));
+        if (value) return value;
+      }
+      return '';
+    }
+
+    function firstAttr(selectors, name, root = document) {
+      for (const selector of selectors) {
+        const value = absoluteUrl(attr(selector, name, root));
+        if (value) return value;
+      }
+      return '';
+    }
+
+    function collectMediaUrls(root) {
+      const imageUrls = [];
+      const pushImage = (value) => pushUnique(imageUrls, value);
+      Array.from(root.querySelectorAll('img[src], img[data-src], [style*="background-image"]')).forEach((node) => {
+        pushImage(node.getAttribute?.('src') || '');
+        pushImage(node.getAttribute?.('data-src') || '');
+        pushImage(backgroundImageUrl(node));
+      });
+      const videoCandidates = [
+        absoluteUrl(root.querySelector('video')?.currentSrc || ''),
+        absoluteUrl(root.querySelector('video')?.src || ''),
+        absoluteUrl(root.querySelector('video source')?.src || ''),
+        firstAttr(['a[href*=".mp4"]', 'a[href*="video"]'], 'href', root),
+      ].filter(Boolean);
+      return {
+        imageUrls,
+        videoUrl: videoCandidates[0] || '',
+      };
+    }
+
+    function pickTelegramMessageRoot() {
+      const pathMessageId = clean(location.pathname.match(/\/(\d+)(?:\/?$|[?#])/)?.[1]);
+      const candidates = Array.from(document.querySelectorAll(
+        '.tgme_widget_message_wrap, .tgme_widget_message, .bubble[data-mid], .message[data-mid], .bubbles .bubble, .EmbeddedMessage, .Message'
+      ));
+      if (candidates.length === 0) return document;
+      if (pathMessageId) {
+        const exact = candidates.find((node) => {
+          const dataPost = clean(node.getAttribute('data-post'));
+          const dataMid = clean(node.getAttribute('data-mid'));
+          return dataPost.endsWith(`/${pathMessageId}`) || dataMid === pathMessageId || dataMid.endsWith(`_${pathMessageId}`);
+        });
+        if (exact) return exact;
+      }
+      const withMedia = candidates.filter((node) => node.querySelector('video, img, source, [style*="background-image"]'));
+      const visible = withMedia.filter((node) => {
+        const rect = node.getBoundingClientRect();
+        return rect.width > 40 && rect.height > 40;
+      });
+      return visible[visible.length - 1] || withMedia[withMedia.length - 1] || candidates[candidates.length - 1] || document;
+    }
+
+    const root = pickTelegramMessageRoot();
+    const media = collectMediaUrls(root);
+    const titleBase = firstText([
+      '.tgme_widget_message_author',
+      '.tgme_widget_message_owner_name',
+      '.peer-title',
+      '.sender-title',
+      '.chat-info .title',
+      'h1',
+    ], root) || clean(meta('meta[property="og:title"]') || document.title);
+    const messageText = firstText([
+      '.tgme_widget_message_text',
+      '.message-text',
+      '.text-content',
+      '.translatable-message',
+      '.message',
+    ], root);
+    const author = firstText([
+      '.tgme_widget_message_author',
+      '.tgme_widget_message_owner_name',
+      '.peer-title',
+      '.sender-title',
+      '.chat-info .title',
+    ], root) || clean(meta('meta[name="author"]'));
+    const authorProfileUrl = firstAttr([
+      '.tgme_widget_message_author[href]',
+      '.tgme_widget_message_owner_name[href]',
+      '.peer-title[href]',
+      '.sender-title[href]',
+    ], 'href', root) || absoluteUrl(location.pathname.split('/').slice(0, 2).join('/'));
+    const publishedAt = clean(root.querySelector('time')?.getAttribute('datetime') || root.querySelector('time')?.dateTime || '');
+    const dataPost = clean(root.getAttribute('data-post'));
+    const dataMid = clean(root.getAttribute('data-mid'));
+    const postId = dataPost || dataMid || clean(location.pathname.replace(/^\/+|\/+$/g, ''));
+    const hasVideo = Boolean(media.videoUrl);
+    const hasImages = media.imageUrls.length > 0;
+    const payload = basePayload('telegram', 'Telegram', hasVideo ? 'video' : (hasImages ? 'post' : 'page'));
+    payload.externalId = postId ? `telegram-${postId.replace(/[^\w/-]+/g, '_')}` : payload.externalId;
+    payload.title = clean(messageText.slice(0, 80) || titleBase || payload.title || 'Telegram 消息');
+    payload.text = messageText || payload.description || payload.title;
+    payload.description = clean(meta('meta[property="og:description"]') || payload.text);
+    payload.author = author || payload.author;
+    payload.authorProfileUrl = authorProfileUrl || payload.authorProfileUrl;
+    payload.publishedAt = publishedAt || payload.publishedAt;
+    payload.images = media.imageUrls.slice(0, 12);
+    payload.coverUrl = payload.images[0] || backgroundImageUrl(root.querySelector('.tgme_widget_message_photo_wrap, .media-inner, .reply-media-thumb, .full-media')) || payload.coverUrl;
+    payload.thumbnailUrl = payload.coverUrl;
+    payload.videoUrl = media.videoUrl || payload.videoUrl;
+    payload.mode = `telegram-${payload.contentType}`;
+    return payload;
+  }
+
   const platform = detectPlatform();
   const extractors = {
     bilibili: extractBilibili,
@@ -3622,6 +3769,7 @@ function extractSocialPlatformPayload(platformHint = '') {
     reddit: extractReddit,
     x: extractXPost,
     instagram: extractInstagram,
+    telegram: extractTelegram,
   };
   const payload = (extractors[platform] || (() => basePayload(platform, platform, 'page')))();
   payload.indexText = [
@@ -3889,7 +4037,7 @@ async function saveCurrentPageFromTab(tabId) {
   if (action === 'save-zhihu-article') {
     return await saveZhihuArticleFromTab(tabId);
   }
-  if (/^save-(bilibili|kuaishou|tiktok|reddit|x|instagram)$/.test(action)) {
+  if (/^save-(bilibili|kuaishou|tiktok|reddit|x|instagram|telegram)$/.test(action)) {
     return await saveSocialPlatformFromTab(tabId, action.replace(/^save-/, ''));
   }
   return await saveCurrentPageLinkFromTab(tabId);
@@ -9141,6 +9289,19 @@ function detectCaptureTarget() {
       action: 'save-instagram',
       label: isPostPage ? '保存 Instagram 内容到知识库' : '保存 Instagram 页面到知识库',
       description: isPostPage ? '当前页面已识别为 Instagram 内容页。' : '当前页面已识别为 Instagram 页面。',
+      detected: true,
+    };
+  }
+
+  if (hostname === 't.me' || hostname.endsWith('.t.me') || hostname === 'telegram.me' || hostname.endsWith('.telegram.me') || hostname === 'web.telegram.org' || hostname.endsWith('.telegram.org')) {
+    const pathname = String(location.pathname || '');
+    const isMessagePage = /\/\d+(?:\/?$|[?#])/.test(pathname) || pathname.startsWith('/k/') || pathname.startsWith('/a/') || pathname.startsWith('/z/');
+    return {
+      kind: isMessagePage ? 'telegram-message' : 'telegram-page',
+      platform: 'telegram',
+      action: 'save-telegram',
+      label: isMessagePage ? '保存 Telegram 消息到知识库' : '保存 Telegram 页面到知识库',
+      description: isMessagePage ? '当前页面已识别为 Telegram 单条消息或媒体页。' : '当前页面已识别为 Telegram 页面。',
       detected: true,
     };
   }

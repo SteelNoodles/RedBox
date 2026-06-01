@@ -802,6 +802,19 @@ function detectPageInfo() {
         };
     }
 
+    if (hostname === 't.me' || hostname.endsWith('.t.me') || hostname === 'telegram.me' || hostname.endsWith('.telegram.me') || hostname === 'web.telegram.org' || hostname.endsWith('.telegram.org')) {
+        const isMessagePage = /\/\d+(?:\/?$|[?#])/.test(pathname) || pathname.startsWith('/k/') || pathname.startsWith('/a/') || pathname.startsWith('/z/');
+        return {
+            kind: isMessagePage ? 'telegram-message' : 'telegram-page',
+            platform: 'telegram',
+            action: 'save-telegram',
+            label: isMessagePage ? '保存 Telegram 消息到知识库' : '保存 Telegram 页面到知识库',
+            description: isMessagePage ? '当前页面已识别为 Telegram 单条消息或媒体页。' : '当前页面已识别为 Telegram 页面。',
+            primaryEnabled: true,
+            detected: true,
+        };
+    }
+
     return createLinkFallbackPageInfo();
 }
 
@@ -1194,7 +1207,7 @@ function summarizeActionResponse(response, fallback) {
     if (response?.mode === 'xhs-comments') {
         return `评论 ${Number(response.count || 0)} 条`;
     }
-    if (/^(bilibili|kuaishou|tiktok|reddit|x|instagram)-/.test(String(response?.mode || ''))) {
+    if (/^(bilibili|kuaishou|tiktok|reddit|x|instagram|telegram)-/.test(String(response?.mode || ''))) {
         if (response.duplicate) {
             return response.updated ? '知识库中已存在，已更新' : '知识库中已存在';
         }
@@ -1226,6 +1239,7 @@ async function runXhsDomAction(action, options = {}) {
         saveReddit: { type: 'save-reddit', pending: '保存中...', done: '已保存 Reddit 内容' },
         saveX: { type: 'save-x', pending: '保存中...', done: '已保存 X 内容' },
         saveInstagram: { type: 'save-instagram', pending: '保存中...', done: '已保存 Instagram 内容' },
+        saveTelegram: { type: 'save-telegram', pending: '保存中...', done: '已保存 Telegram 内容' },
     };
     const config = actionMap[action];
     if (!config) return;
@@ -1873,6 +1887,7 @@ function getRedboxOverlayConfig(pageInfo) {
         'reddit': { variant: 'reddit', subtitle: 'Reddit', label: '保存内容', action: 'saveReddit', title: '保存当前 Reddit 内容到 RedBox' },
         'x': { variant: 'x', subtitle: 'X', label: '保存内容', action: 'saveX', title: '保存当前 X 内容到 RedBox' },
         'instagram': { variant: 'instagram', subtitle: 'Instagram', label: '保存内容', action: 'saveInstagram', title: '保存当前 Instagram 内容到 RedBox' },
+        'telegram': { variant: 'telegram', subtitle: 'Telegram', label: '保存消息', action: 'saveTelegram', title: '保存当前 Telegram 消息到 RedBox' },
     };
     const platformKey = String(pageInfo?.platform || pageInfo?.kind || '').split('-')[0];
     if (platformMap[platformKey]) {

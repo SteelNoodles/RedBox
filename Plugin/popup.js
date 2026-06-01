@@ -110,6 +110,18 @@ function inferPageInfoFromUrl(rawUrl) {
     });
   }
 
+  if (hostname === 't.me' || hostname.endsWith('.t.me') || hostname === 'telegram.me' || hostname.endsWith('.telegram.me') || hostname === 'web.telegram.org' || hostname.endsWith('.telegram.org')) {
+    return {
+      kind: 'telegram-message',
+      platform: 'telegram',
+      action: 'save-telegram',
+      label: '保存 Telegram 消息到知识库',
+      description: '当前页面已识别为 Telegram 消息或媒体页。',
+      primaryEnabled: true,
+      detected: true,
+    };
+  }
+
   return createLinkFallbackPageInfo();
 }
 

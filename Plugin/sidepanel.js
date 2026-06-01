@@ -977,6 +977,7 @@ function getCaptureActionConfig(nextContext) {
     reddit: { subtitle: 'Reddit', label: pageType === 'post' ? '保存帖子' : '保存页面', action: 'saveReddit', title: '保存当前 Reddit 内容到 RedBox' },
     x: { subtitle: 'X', label: pageType === 'post' ? '保存推文' : '保存页面', action: 'saveX', title: '保存当前 X 内容到 RedBox' },
     instagram: { subtitle: 'Instagram', label: pageType === 'post' || pageType === 'video' ? '保存内容' : '保存页面', action: 'saveInstagram', title: '保存当前 Instagram 内容到 RedBox' },
+    telegram: { subtitle: 'Telegram', label: pageType === 'post' || pageType === 'video' ? '保存消息' : '保存页面', action: 'saveTelegram', title: '保存当前 Telegram 内容到 RedBox' },
   };
   if (platformMap[platform]) {
     const item = platformMap[platform];
@@ -1019,6 +1020,7 @@ function getCaptureActionMeta(action) {
     saveReddit: { type: 'save-reddit', pending: '保存中...', done: '已保存 Reddit 内容' },
     saveX: { type: 'save-x', pending: '保存中...', done: '已保存 X 内容' },
     saveInstagram: { type: 'save-instagram', pending: '保存中...', done: '已保存 Instagram 内容' },
+    saveTelegram: { type: 'save-telegram', pending: '保存中...', done: '已保存 Telegram 内容' },
   };
   return map[action] || {};
 }
@@ -1175,6 +1177,7 @@ function normalizePlatform(value) {
   const hostname = getPlatformHostname(text);
   if (hostname === 'x.com' || hostname.endsWith('.x.com') || hostname === 'twitter.com' || hostname.endsWith('.twitter.com') || text === 'x') return 'x';
   if (hostname === 'instagram.com' || hostname.endsWith('.instagram.com') || hostname === 'instagr.am' || hostname.endsWith('.instagr.am')) return 'instagram';
+  if (hostname === 't.me' || hostname.endsWith('.t.me') || hostname === 'telegram.me' || hostname.endsWith('.telegram.me') || hostname === 'web.telegram.org' || hostname.endsWith('.telegram.org')) return 'telegram';
   if (hostname === 'reddit.com' || hostname.endsWith('.reddit.com')) return 'reddit';
   if (hostname === 'tiktok.com' || hostname.endsWith('.tiktok.com')) return 'tiktok';
   if (hostname === 'bilibili.com' || hostname.endsWith('.bilibili.com') || hostname === 'b23.tv') return 'bilibili';
@@ -1192,6 +1195,7 @@ function normalizePlatform(value) {
   if (/tiktok/.test(text)) return 'tiktok';
   if (/reddit/.test(text)) return 'reddit';
   if (/instagram|instagr\.am|ins\b/.test(text)) return 'instagram';
+  if (/telegram|t\.me|telegram\.me/.test(text)) return 'telegram';
   if (/^x$|(^|[^a-z])x\.com|twitter|platform-x|[^a-z]x[^a-z]/.test(text)) return 'x';
   if (/zhihu|知乎/.test(text)) return 'zhihu';
   if (/weixin|wechat|mp\.weixin|公众号/.test(text)) return 'wechat';
@@ -1221,6 +1225,7 @@ function getPlatformMeta(platform) {
     reddit: { platform: 'reddit', name: 'Reddit', logo: 'R', icon: 'assets/platforms/reddit.svg' },
     x: { platform: 'x', name: 'X', logo: 'X', icon: 'assets/platforms/x.svg' },
     instagram: { platform: 'instagram', name: 'Instagram', logo: 'I', icon: 'assets/platforms/instagram.svg' },
+    telegram: { platform: 'telegram', name: 'Telegram', logo: 'T' },
     wechat: { platform: 'wechat', name: '微信公众号', logo: '微' },
     zhihu: { platform: 'zhihu', name: '知乎', logo: '知', icon: 'assets/platforms/zhihu.svg' },
     redbox: { platform: 'redbox', name: 'RedBox', logo: 'R' },
@@ -1234,7 +1239,7 @@ function inferPageType(pageInfo, tab) {
   const url = String(tab?.url || '').toLowerCase();
   if (/profile|author|博主|主页/.test(kind) || /\/user\/profile\//.test(url)) return 'profile';
   if (/note|image|小红书/.test(kind) || /\/explore\/|\/discovery\/item\//.test(url)) return 'note';
-  if (/post|tweet|帖子|推文/.test(kind) || /\/comments\/|\/status\/|instagram\.com\/(p|reel)\//.test(url)) return 'post';
+  if (/post|tweet|message|帖子|推文|消息/.test(kind) || /\/comments\/|\/status\/|instagram\.com\/(p|reel)\//.test(url)) return 'post';
   if (/zhihu-answer|知乎回答/.test(kind)) return 'article';
   if (/zhihu-article|知乎文章|知乎专栏/.test(kind)) return 'article';
   if (/video|youtube|douyin|kuaishou|bilibili|tiktok/.test(kind)) return 'video';
